@@ -13,6 +13,7 @@ using System.Windows.Forms;
 using Lucene.Net.Analysis.Standard;
 using Lucene.Net.Documents;
 using Lucene.Net.Index;
+using Lucene.Net.QueryParsers.Classic;
 using Lucene.Net.Search;
 using Lucene.Net.Search.Spans;
 using Lucene.Net.Store;
@@ -34,7 +35,10 @@ namespace App
         //create an index writer
         public static IndexWriterConfig indexConfig = new IndexWriterConfig(AppLuceneVersion, analyzer);
         public static IndexWriter writer = new IndexWriter(dir, indexConfig);
-        public string connString = "Host=84.201.147.162;Username=developer;Password=rtfP@ssw0rd;Database=IR-2019";
+     
+        public string connString = "Host=db.mirvoda.com;Port=5454;Username=developer;Password=rtfP@ssw0rd;Database=IR-2019";
+        public IndexSearcher searcher = new IndexSearcher(writer.GetReader(applyAllDeletes: true));
+
         public FormSearch()
         {
             InitializeComponent();
@@ -176,38 +180,36 @@ namespace App
                             ResultBox.Items.Add(item);
                         conn.Close();
                     }
-                else {
-                    var searcher = new IndexSearcher(writer.GetReader(applyAllDeletes: true));
-
+                else
+                {
                     //Ищем по одному слову
+                    QueryParser parser = new QueryParser(AppLuceneVersion, "name", analyzer);
                     var phrase = new MultiPhraseQuery();
                     foreach (var word in array)
                     {
-                        phrase = new MultiPhraseQuery();
+                        var q = parser.Parse(query);
                         if (!String.IsNullOrEmpty(word))
                         {
-                            phrase.Add(new Term("name_word", word));
-                            var res = searcher.Search(phrase, 10).ScoreDocs;
+                            var res = searcher.Search(q, 10).ScoreDocs;
                             foreach (var hit in res)
                             {
                                 var foundDoc = searcher.Doc(hit.Doc);
                                 var score = hit.Score;
                                 res_list.Add("Score: " + score + " ID: " + foundDoc.GetField("id").GetInt32Value().ToString() +
-                                    " YEAR: " + foundDoc.GetField("year").GetInt32Value().ToString() + " NAME: " + foundDoc.GetValues("full_name")[0]);
+                                    " YEAR: " + foundDoc.GetField("year").GetInt32Value().ToString() + " NAME: " + foundDoc.GetValues("name")[0]);
                             }
                         }
                     }
 
                     //Ищем полное название
-                    phrase = new MultiPhraseQuery();
-                    phrase.Add(new Term("full_name", query));
+                    phrase.Add(new Term("name", query));
                     var hits = searcher.Search(phrase, 10).ScoreDocs;
                     foreach (var hit in hits)
                     {
                         var foundDoc = searcher.Doc(hit.Doc);
                         var score = hit.Score;
                         res_list.Add("Score: " + score + " ID: " + foundDoc.GetField("id").GetInt32Value().ToString() +
-                            " YEAR: " + foundDoc.GetField("year").GetInt32Value().ToString() + " NAME: " + foundDoc.GetValues("full_name")[0]);
+                            " YEAR: " + foundDoc.GetField("year").GetInt32Value().ToString() + " NAME: " + foundDoc.GetValues("name")[0]);
                     }
 
                     //Ищем части слов
@@ -215,14 +217,14 @@ namespace App
                     {
                         if (!String.IsNullOrEmpty(word))
                         {
-                            var wild = new WildcardQuery(new Term("name_word", "*" + word + "*"));
+                            var wild = new WildcardQuery(new Term("name", word));
                             var res = searcher.Search(wild, 10).ScoreDocs;
                             foreach (var hit in res)
                             {
                                 var foundDoc = searcher.Doc(hit.Doc);
                                 var score = hit.Score;
                                 res_list.Add("Score: " + score + " ID: " + foundDoc.GetField("id").GetInt32Value().ToString() +
-                                    " YEAR: " + foundDoc.GetField("year").GetInt32Value().ToString() + " NAME: " + foundDoc.GetValues("full_name")[0]);
+                                    " YEAR: " + foundDoc.GetField("year").GetInt32Value().ToString() + " NAME: " + foundDoc.GetValues("name")[0]);
                             }
                         }
                     }
@@ -251,7 +253,7 @@ namespace App
                             if (!String.IsNullOrEmpty(word))
                             {
                                 BooleanQuery booleanQuery = new BooleanQuery();
-                                var wild = new WildcardQuery(new Term("name_word", "*" + word + "*"));
+                                var wild = new WildcardQuery(new Term("name", word));
                                 var num = NumericRangeQuery.NewInt32Range("year", 1, number, number, true, true);
                                 booleanQuery.Add(wild, Occur.MUST);
                                 booleanQuery.Add(num, Occur.MUST);
@@ -261,14 +263,14 @@ namespace App
                                     var foundDoc = searcher.Doc(hit.Doc);
                                     var score = hit.Score;
                                     res_list.Add("Score: " + score + " ID: " + foundDoc.GetField("id").GetInt32Value().ToString() +
-                                        " YEAR: " + foundDoc.GetField("year").GetInt32Value().ToString() + " NAME: " + foundDoc.GetValues("full_name")[0]);
+                                        " YEAR: " + foundDoc.GetField("year").GetInt32Value().ToString() + " NAME: " + foundDoc.GetValues("name")[0]);
                                 }
                             }
                         }
                     }
                 }
 
-                //Не хотим дубли. Хотя тут их, вроде. не особо много. Из-за Score'a
+                //Не хотим дубли
                 res_list = res_list.Select(x => x).Distinct().ToList();
                 ResultBox.Items.Clear();
                 foreach (var item in res_list)
@@ -295,11 +297,12 @@ namespace App
         private void luceneButton_Click(object sender, EventArgs e)
         {
             Cursor.Current = Cursors.WaitCursor;
-
+            writer.DeleteAll();
+            writer.Flush(triggerMerge: true, applyAllDeletes:true);
             //Yes, I'm handling exceptions
             try
             {
-                string connString = "Host=84.201.147.162;Username=developer;Password=rtfP@ssw0rd;Database=IR-2019";
+                string connString = "Host=db.mirvoda.com;Port=5454;Username=developer;Password=rtfP@ssw0rd;Database=IR-2019";
                 using (var conn = new NpgsqlConnection(connString))
                 {
                     conn.Open();
@@ -326,12 +329,7 @@ namespace App
                                 name = name
                             };
                             var doc = new Document();
-                            doc.Add(new Field("full_name", source.name, StringField.TYPE_STORED));
-                            foreach (var word in source.name.Split(' '))
-                            {
-                                if (!String.IsNullOrEmpty(word))
-                                    doc.Add(new Field("name_word", word, TextField.TYPE_STORED));
-                            }
+                            doc.Add(new TextField("name", source.name, Field.Store.YES));
                             doc.Add(new StoredField("id", source.id));
                             doc.Add(new Int32Field("year", source.year, Field.Store.YES));
                             writer.AddDocument(doc);

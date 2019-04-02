@@ -23,7 +23,7 @@ namespace App
 
         private void ButtonImport_Click(object sender, EventArgs e)
         {
-            string connString = "Host=84.201.147.162;Username=developer;Password=rtfP@ssw0rd;Database=IR-2019";
+            string connString = "Host=db.mirvoda.com;Port=5454;Username=developer;Password=rtfP@ssw0rd;Database=IR-2019";
 
             //Pretty stuff
             Cursor.Current = Cursors.WaitCursor;
