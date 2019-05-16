@@ -7,6 +7,13 @@
 ##
 ## Get latest from https://github.com/github/gitignore/blob/master/VisualStudio.gitignore
 
+# password.txt
+Lab4/password.txt
+LR3/password.txt
+
+# spider output json
+LR3/output.json
+
 # User-specific files
 *.rsuser
 *.suo
